@@ -1,0 +1,11 @@
+{
+    "cloudflare": {
+        "api_token": "api_token",
+        "zone_id": "zone_id"
+    },
+    "google_sheets": {
+        "credentials_file": "./google_credentials.json",
+        "spreadsheet_id": "spreadsheet_id",
+        "sheet_name": "Monthly"
+    }
+}
