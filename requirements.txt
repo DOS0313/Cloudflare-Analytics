@@ -1,0 +1,5 @@
+requests~=2.32.3
+pandas~=2.2.3
+google-api-python-client~=2.153.0
+protobuf~=5.28.3
+google-auth-oauthlib~=1.2.1
