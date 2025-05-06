@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import pandas as pd
+import time
 from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
@@ -326,59 +327,90 @@ class GoogleSheetHandler:
             return None
 
 
+def should_collect_data():
+    """데이터 수집이 필요한지 확인"""
+    now = datetime.now()
+    print(f"현재 날짜: {now.day}")
+    return now.day == 1
+
 def main():
+    print("Cloudflare Analytics 서비스 시작...")
+    print(f"현재 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(" ")
+    
     try:
         script_dir = Path(__file__).parent
         config_path = script_dir / "config.json"
-
-        print("설정 파일 로드 중...")
+        
+        print("설정 정보")
         config_handler = ConfigHandler(config_path)
         config = config_handler.config
+        
+        print(f"- Config 파일 경로: {config_path}")
+        print(f"- Cloudflare Zone ID: {config['cloudflare']['zone_id']}")
+        print(f"- Spreadsheet ID: {config['google_sheets']['spreadsheet_id']}")
+        print(f"- Sheet 이름: {config['google_sheets']['sheet_name']}")
+        print(f"- Credentials 파일: {config['google_sheets']['credentials_file']}")
+        print(" ")
+    
+        while True:
+            try:
+                if should_collect_data():
+                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 월간 데이터 수집 시작")
+                    
+                    print("Cloudflare 데이터 수집 중...")
+                    cf_analytics = CloudflareAnalytics(config)
 
-        print("Cloudflare 데이터 수집 중...")
-        cf_analytics = CloudflareAnalytics(config)
+                    # 최근 30일 데이터 수집
+                    daily_data = cf_analytics.get_last_30days_analytics()
+                    if not daily_data:
+                        print("수집할 데이터가 없습니다.")
+                    else:
+                        print("\nGoogle Spreadsheet에 데이터 추가 중...")
+                        gsheet = GoogleSheetHandler(config)
 
-        # 최근 30일 데이터 수집
-        daily_data = cf_analytics.get_last_30days_analytics()
-        if not daily_data:
-            print("수집할 데이터가 없습니다.")
-            return
+                        result = gsheet.append_daily_data(daily_data)
+                        if result:
+                            print(f"\n데이터가 성공적으로 추가되었습니다.")
 
-        print("\nGoogle Spreadsheet에 데이터 추가 중...")
-        gsheet = GoogleSheetHandler(config)
+                            # 새로 추가된 데이터의 통계 요약
+                            total_requests = sum(day['총 요청수'] for day in daily_data)
+                            total_cached = sum(day['캐시된 요청수'] for day in daily_data)
+                            total_visitors = sum(day['고유 방문자'] for day in daily_data)
+                            total_bytes = sum(day['총 데이터(bytes)'] for day in daily_data)
+                            total_cached_bytes = sum(day['캐시된 데이터(bytes)'] for day in daily_data)
 
-        result = gsheet.append_daily_data(daily_data)
-        if result:
-            print(f"\n데이터가 성공적으로 추가되었습니다.")
+                            print("\n수집 데이터 요약:")
+                            print(f"수집 기간: {daily_data[0]['날짜']} ~ {daily_data[-1]['날짜']}")
+                            print(f"총 고유 방문자: {total_visitors:,}")
+                            print(f"총 요청 수: {total_requests:,}")
+                            print(f"총 캐시된 요청 수: {total_cached:,}")
 
-            # 새로 추가된 데이터의 통계 요약
-            total_requests = sum(day['총 요청수'] for day in daily_data)
-            total_cached = sum(day['캐시된 요청수'] for day in daily_data)
-            total_visitors = sum(day['고유 방문자'] for day in daily_data)
-            total_bytes = sum(day['총 데이터(bytes)'] for day in daily_data)
-            total_cached_bytes = sum(day['캐시된 데이터(bytes)'] for day in daily_data)
+                            if total_requests > 0:
+                                cache_ratio = (total_cached / total_requests) * 100
+                                print(f"전체 캐시 비율: {cache_ratio:.2f}%")
 
-            print("\n수집 데이터 요약:")
-            print(f"수집 기간: {daily_data[0]['날짜']} ~ {daily_data[-1]['날짜']}")
-            print(f"총 고유 방문자: {total_visitors:,}")
-            print(f"총 요청 수: {total_requests:,}")
-            print(f"총 캐시된 요청 수: {total_cached:,}")
+                            print(f"\n총 데이터: {gsheet.format_bytes(total_bytes)}")
+                            print(f"캐시된 데이터: {gsheet.format_bytes(total_cached_bytes)}")
 
-            if total_requests > 0:
-                cache_ratio = (total_cached / total_requests) * 100
-                print(f"전체 캐시 비율: {cache_ratio:.2f}%")
+                            if total_bytes > 0:
+                                bytes_cache_ratio = (total_cached_bytes / total_bytes) * 100
+                                print(f"데이터 캐시 비율: {bytes_cache_ratio:.2f}%")
 
-            print(f"\n총 데이터: {gsheet.format_bytes(total_bytes)}")
-            print(f"캐시된 데이터: {gsheet.format_bytes(total_cached_bytes)}")
+                    print("\n다음 데이터 수집까지 대기 중...")
+                
+                # 1시간마다 체크
+                time.sleep(3600)
 
-            if total_bytes > 0:
-                bytes_cache_ratio = (total_cached_bytes / total_bytes) * 100
-                print(f"데이터 캐시 비율: {bytes_cache_ratio:.2f}%")
+            except Exception as e:
+                print(f"\n에러 발생: {str(e)}")
+                print("1시간 후 다시 시도합니다...")
+                time.sleep(3600)
 
     except Exception as e:
         print(f"\n에러 발생: {str(e)}")
-        raise
-
+        print("1시간 후 다시 시도합니다...")
+        time.sleep(3600)
 
 if __name__ == "__main__":
     main()

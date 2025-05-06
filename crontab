@@ -1,1 +1,0 @@
-0 0 1 * * python /app/cloudflare_analytics.py >> /app/logs/analytics.log 2>&1
