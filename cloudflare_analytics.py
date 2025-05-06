@@ -330,7 +330,6 @@ class GoogleSheetHandler:
 def should_collect_data():
     """데이터 수집이 필요한지 확인"""
     now = datetime.now()
-    print(f"현재 날짜: {now.day}")
     return now.day == 1
 
 def main():
